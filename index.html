@@ -94,6 +94,14 @@ label.f{display:block;font-size:14px;color:var(--muted);margin-bottom:6px}
 .rounds{display:flex;gap:8px;margin-top:14px}
 .rounds button{flex:1;min-height:52px;border-radius:14px;border:1.5px solid var(--line);font-weight:600}
 .rounds button[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:var(--accent-ink)}
+.bar{height:12px;border-radius:999px;background:var(--track);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:999px}
+.part{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.tick{width:44px;height:44px;flex:none;border-radius:12px;border:1.5px solid var(--line);font-size:20px;color:transparent;margin-top:2px}
+.tick[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:var(--accent-ink)}
+.part details{flex:1;min-width:0}
+.part summary{min-height:48px;display:flex;flex-direction:column;justify-content:center;cursor:pointer;list-style:none}
+.part summary::-webkit-details-marker{display:none}
 .log{list-style:none;margin:14px 0 0;padding:0}
 .log li{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
 .log li:first-child{border-top:0}
@@ -149,10 +157,17 @@ const WO={
   A:{name:'Calisthenics A',rounds:3,note:'Rest 60–90 seconds between rounds.',items:['Incline push-ups × 10','Bodyweight squats × 12','Glute bridges × 15','Bodyweight rows × 8–10','Plank × 30 sec']},
   B:{name:'Calisthenics B',rounds:3,note:'',items:['Push-ups / incline push-ups × 8–12','Reverse lunges × 8 each leg','Glute bridges × 15','Bodyweight rows × 8–12','Dead bug × 10 each side','Side plank × 20 sec each side']}
 };
+const MOB=[
+  {t:'Easy warm-up',m:'5 min',note:'Move continuously but gently. Effort 2–3/10.',items:[['March in place','2 min'],['Arm circles','30 sec each direction'],['Shoulder rolls','30 sec'],['Hip circles','30 sec each direction'],['Ankle circles','30 sec/side'],['Easy bodyweight squats','10 reps']]},
+  {t:'Lower-body mobility',m:'10 min',items:[['Ankle rocks','2 × 10/side','Stand facing a wall, keep your heel down, and gently drive your knee toward the wall.'],['90/90 hip rotations','2 × 8/side',"Move slowly. Don't force your range."],['Hip-flexor stretch','2 × 30 sec/side','Half-kneeling position, gently push your hips forward.'],['Adductor rock-backs','2 × 8/side','Keep one leg extended to the side and slowly sit your hips backward.'],['Calf stretch','2 × 30 sec/side']]},
+  {t:'Upper-body mobility',m:'8 min',items:[['Cat-cow','8–10 reps'],['Thoracic rotations','2 × 8/side'],['Wall slides','2 × 10'],['Cross-body shoulder stretch','30 sec/side'],["Child's pose",'30–45 sec']]},
+  {t:'Core activation',m:'5 min',note:"Keep this easy. You're not trying to fatigue your abs.",items:[['Dead bug','2 × 8/side'],['Bird dog','2 × 8/side'],['Glute bridge','2 × 12']]},
+  {t:'Finish with easy walking',m:'5–10 min',note:'Take a relaxed walk. You should finish feeling better than when you started.',items:[]}
+];
 const STAIRS=['','Very winded','Winded','Okay','Good','Easy'];
 const METRICS={waist:{label:'Waist',unit:'cm',dec:1},rhr:{label:'Resting HR',unit:'bpm',dec:0},maxJog:{label:'Max jog',unit:'min',dec:0}};
 
-function def(){return {goalMin:30,followPlan:true,reminder:'06:30',jogs:[],acts:[],weights:[],workouts:{},checkins:[],timerStart:null,timerType:'jog'};}
+function def(){return {planStart:'2026-09-28',planDays:90,goalMin:30,followPlan:true,reminder:'06:30',jogs:[],acts:[],weights:[],workouts:{},checkins:[],timerStart:null,timerType:'jog'};}
 function load(){try{const r=localStorage.getItem(KEY);if(r){const o=JSON.parse(r);return Object.assign(def(),o);}}catch(e){}return def();}
 let S=load();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
@@ -183,7 +198,8 @@ function goalFor(k){return (S.followPlan?PLAN[fromKey(k).getDay()].lo:S.goalMin)
 function isOptional(k){return S.followPlan&&!!PLAN[fromKey(k).getDay()].optional;}
 function wType(k){const w=S.workouts[k];return (w&&w.type)||PLAN[fromKey(k).getDay()].w;}
 function wRounds(k){const w=S.workouts[k];return w&&w.rounds?w.rounds:0;}
-function wDone(k){const t=wType(k),r=wRounds(k);if(t==='A'||t==='B')return r>=WO[t].rounds;if(t==='R')return r>=1;return false;}
+function getParts(k){const w=S.workouts[k];if(w&&Array.isArray(w.parts))return w.parts;if(w&&w.type==='R'&&w.rounds>=1)return MOB.map((m,i)=>i);return [];}
+function wDone(k){const t=wType(k),r=wRounds(k);if(t==='A'||t==='B')return r>=WO[t].rounds;if(t==='R')return getParts(k).length>=MOB.length;return false;}
 function lastWeightBefore(k){const a=sortedW().filter(w=>w.date<=k);return a.length?a[a.length-1].kg:null;}
 function streak(){
   const d=new Date();let n=0;
@@ -205,6 +221,22 @@ function ciDue(){
   if(!sorted.length)return dow===1;
   const last=sorted[sorted.length-1].date;
   return dow===1||(fromKey(t)-fromKey(last))/864e5>=7;
+}
+function planDay(k){return Math.round((fromKey(k)-fromKey(S.planStart))/864e5)+1;}
+function planLabel(k){const n=planDay(k),tot=S.planDays;return n<1?'Plan starts '+shortDate(S.planStart):n>tot?'90-day plan complete':'Day '+n+' of '+tot;}
+function planCard(){
+  const t=dkey(), tot=S.planDays, n=planDay(t), shown=Math.max(0,Math.min(tot,n));
+  const end=shiftKey(S.planStart,tot-1), ds=[];
+  for(let i=0;i<tot;i++){const k=shiftKey(S.planStart,i);if(k>t)break;ds.push(k);}
+  const eligible=ds.filter(k=>!isOptional(k)&&!(k===t&&jogSecOn(k)<goalFor(k)));
+  const hits=eligible.filter(k=>jogSecOn(k)>=goalFor(k)).length;
+  const strengthDays=ds.filter(k=>['A','B','R'].indexOf(wType(k))>=0&&!(k===t&&!wDone(k)));
+  const sDone=strengthDays.filter(wDone).length;
+  const cardio=ds.reduce((a,k)=>a+mins(jogSecOn(k)),0);
+  const ws=sortedW().filter(w=>w.date>=S.planStart&&w.date<=t);
+  const wch=ws.length>1?ws[ws.length-1].kg-ws[0].kg:null;
+  const left=Math.max(0,tot-shown);
+  return `<section class="card"><h2>${planLabel(t)}</h2><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${tot}" aria-valuenow="${shown}"><i style="width:${(shown/tot*100).toFixed(1)}%"></i></div><p class="small muted" style="margin:8px 0 14px">Started ${shortDate(S.planStart)} · day ${tot} is ${shortDate(end)} · ${left} days left</p><div class="grid2"><div class="stat"><div class="n">${hits}/${eligible.length}</div><div class="t">Cardio goals hit</div></div><div class="stat"><div class="n">${sDone}/${strengthDays.length}</div><div class="t">Strength sessions done</div></div><div class="stat"><div class="n">${cardio}</div><div class="t">Cardio min total</div></div><div class="stat"><div class="n">${ws.length}</div><div class="t">Weigh-ins</div></div><div class="stat"><div class="n">${wch!==null?(wch>0?'+':'')+wch.toFixed(1):'–'}</div><div class="t">Weight change, kg</div></div></div></section>`;
 }
 function weekStart(off){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7)+off*7);return d;}
 
@@ -238,7 +270,8 @@ function workoutCard(k){
     const w=WO[type];
     body=`<p class="small muted">${w.rounds} rounds${w.note?'. '+w.note:''}</p><ul class="ex">${w.items.map(i=>`<li>${i}</li>`).join('')}</ul><div class="rounds" role="group" aria-label="Rounds completed">${[1,2,3].map(n=>`<button data-round="${n}" aria-pressed="${r>=n}">Round ${n}</button>`).join('')}</div><p class="small muted" style="margin-top:8px">${r} of ${w.rounds} rounds done</p>`;
   } else if(type==='R'){
-    body=`<p class="small muted" style="margin-bottom:12px">Recovery and mobility session.</p><button class="btn block ${r>=1?'':'ghost'}" data-mob="1">${r>=1?'Mobility done ✓':'Mark mobility done'}</button>`;
+    const parts=getParts(k);
+    body=`<p class="small muted" style="margin-bottom:4px">Tap a part to see the moves. Check it off when you finish it.</p>`+MOB.map((m,i)=>`<div class="part"><button class="tick" data-part="${i}" aria-pressed="${parts.indexOf(i)>=0}" aria-label="Mark ${m.t} done">✓</button><details><summary><b>${m.t}</b><span class="small muted">${m.m}</span></summary>${m.note?`<p class="small muted" style="margin-top:4px">${m.note}</p>`:''}${m.items.length?`<ul class="ex">${m.items.map(x=>`<li><b>${x[0]}</b> · ${x[1]}${x[2]?`<div class="small muted">${x[2]}</div>`:''}</li>`).join('')}</ul>`:''}</details></div>`).join('')+`<p class="small muted" id="mobCount" style="margin:10px 0">${parts.length} of ${MOB.length} parts done</p><button class="btn ghost block" data-moball="1">${parts.length>=MOB.length?'Clear all':'Mark all done'}</button>`;
   } else {
     body=`<p class="empty">${plan.w==='REST'?'Rest day. Let your body recover.':'No strength workout planned for this day.'}</p>`;
   }
@@ -262,7 +295,7 @@ function viewToday(){
   items.sort((a,b)=>b.id-a.id);
   const list=items.length?`<ul class="log">${items.map(i=>`<li><div><div class="what">${i.title}</div><div class="meta">${i.meta}</div></div><button class="x" data-del="${i.kind}:${i.id}" aria-label="Delete ${i.title}">×</button></li>`).join('')}</ul>`:'<p class="empty">Nothing logged for this day yet.</p>';
   const mainBtn=isToday?`<button class="btn block ${run?'stop':''}" id="jogBtn">${run?'Stop and save '+ctype:'Start '+ctype}</button>`:`<p class="small muted">The timer is for today. Add past time below.</p>`;
-  return `<div class="top"><div><h1>${isToday?'Today':PLAN[fromKey(k).getDay()].day}</h1><div class="date">${longDate(k)}</div></div></div>`+
+  return `<div class="top"><div><h1>${isToday?'Today':PLAN[fromKey(k).getDay()].day}</h1><div class="date">${longDate(k)} · ${planLabel(k)}</div></div></div>`+
   dateBar('today',k)+banners+
   `<section class="card hero ${run?'running':''}"><div class="seg" role="group" aria-label="Cardio type"><button data-ctype="jog" aria-pressed="${ctype==='jog'}" ${run?'disabled':''}>Jog</button><button data-ctype="walk" aria-pressed="${ctype==='walk'}" ${run?'disabled':''}>Walk</button></div>`+
   `<div class="ring"><svg viewBox="0 0 236 236" aria-hidden="true"><circle class="bgc" cx="118" cy="118" r="104"/><circle class="fg" id="fg" cx="118" cy="118" r="104" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}"/></svg><div class="mid"><div class="time" id="clock">${fmtClock(shown)}</div><div class="lbl">${run?'Going now':'Cardio time'}</div></div></div>`+
@@ -329,7 +362,7 @@ function viewProgress(){
   const ws=weekStart(weekOffset), t=dkey();
   const days=WEEK_ORDER.map((dow,i)=>{
     const d=new Date(ws);d.setDate(ws.getDate()+i);const k=dkey(d);
-    return {k:k,dow:dow,name:PLAN[dow].day.slice(0,3),future:k>t,jog:mins(jogSecOn(k)),goal:Math.round(goalFor(k)/60),act:actMinOn(k),w:weightOn(k)!==null,wt:wType(k),done:wDone(k),rounds:wRounds(k)};
+    return {k:k,dow:dow,name:PLAN[dow].day.slice(0,3),future:k>t,jog:mins(jogSecOn(k)),goal:Math.round(goalFor(k)/60),act:actMinOn(k),w:weightOn(k)!==null,wt:wType(k),done:wDone(k),rounds:wRounds(k),parts:getParts(k).length};
   });
   const mx=Math.max(...days.map(x=>Math.max(x.goal,x.jog)))*1.15;
   const W=340,H=170,pl=6,pb=22,pt=16,bw=30,gap=(W-pl*2-bw*7)/6;
@@ -346,15 +379,15 @@ function viewProgress(){
   const rows=days.map(x=>{
     let st='–';
     if(x.wt==='A'||x.wt==='B')st=x.done?x.wt+' ✓':(x.rounds?x.wt+' '+x.rounds+'/3':x.wt);
-    else if(x.wt==='R')st=x.done?'Mobility ✓':'Mobility';
+    else if(x.wt==='R')st=x.done?'Mobility ✓':(x.parts?'Mobility '+x.parts+'/'+MOB.length:'Mobility');
     else if(x.wt==='REST')st='Rest';
     return `<button class="rowbtn" data-open="${x.k}" ${x.future?'disabled':''}><span><b>${x.name}</b></span><span class="r">Cardio ${x.jog} / ${x.goal} min</span><span class="r">${st}</span></button>`;
   }).join('');
-  return `<div class="top"><div><h1>Progress</h1><div class="date">Monday to Sunday</div></div></div>`+
+  return `<div class="top"><div><h1>Progress</h1><div class="date">Monday to Sunday</div></div></div>`+planCard()+
   `<div class="wknav"><button class="step sm" data-weekshift="-1" aria-label="Previous week">‹</button><b>${label}</b><button class="step sm" data-weekshift="1" ${weekOffset>=0?'disabled':''} aria-label="Next week">›</button></div>`+
   `<section class="card"><h2>Cardio minutes</h2><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cardio minutes per day">${bars}</svg><p class="muted small" style="margin-top:6px">Grey ticks show each day's goal. Green bars reached it.</p><div class="grid2" style="margin-top:14px"><div class="stat"><div class="n">${streak()}</div><div class="t">Day streak</div></div><div class="stat"><div class="n">${goalDays}/${past.length}</div><div class="t">Cardio goals hit</div></div><div class="stat"><div class="n">${totalJog}</div><div class="t">Cardio min</div></div><div class="stat"><div class="n">${wDoneN}/${planned.length}</div><div class="t">Strength done</div></div><div class="stat"><div class="n">${totalAct}</div><div class="t">Other activity min</div></div><div class="stat"><div class="n">${wCount}/7</div><div class="t">Weigh-ins</div></div></div></section>`+
   `<section class="card"><h2>Days</h2><p class="small muted" style="margin-bottom:6px">Tap a day to view or fix it.</p>${rows}</section>`+
-  `<section class="card"><h2>Settings</h2><label class="check"><input type="checkbox" id="planOn" ${S.followPlan?'checked':''}><span>Use the weekly plan for each day's cardio goal</span></label><label class="f" for="goalIn" style="margin-top:8px">Fixed daily goal when the plan is off (minutes)</label><input type="number" id="goalIn" inputmode="numeric" min="5" max="300" value="${S.goalMin}"><label class="f" for="remIn" style="margin-top:12px">Weigh-in reminder time (for your own reference)</label><input type="time" id="remIn" value="${S.reminder}"><button class="btn block" id="setSave" style="margin-top:12px">Save settings</button><p class="muted small" style="margin-top:10px">The daily reminder is an alarm in your phone's Clock app.</p></section>`+
+  `<section class="card"><h2>Settings</h2><label class="check"><input type="checkbox" id="planOn" ${S.followPlan?'checked':''}><span>Use the weekly plan for each day's cardio goal</span></label><label class="f" for="planStart" style="margin-top:8px">90-day plan start date</label><input type="date" id="planStart" value="${S.planStart}"><label class="f" for="goalIn" style="margin-top:12px">Fixed daily goal when the plan is off (minutes)</label><input type="number" id="goalIn" inputmode="numeric" min="5" max="300" value="${S.goalMin}"><label class="f" for="remIn" style="margin-top:12px">Weigh-in reminder time (for your own reference)</label><input type="time" id="remIn" value="${S.reminder}"><button class="btn block" id="setSave" style="margin-top:12px">Save settings</button><p class="muted small" style="margin-top:10px">The daily reminder is an alarm in your phone's Clock app.</p></section>`+
   `<section class="card"><h2>Backup</h2><p class="muted small" style="margin-bottom:10px">Your data stays in this browser. Copy a backup before clearing Chrome data.</p><div class="row"><button class="btn ghost small" id="bkCopy">Copy backup</button><button class="btn ghost small" id="bkLoad">Restore</button></div><textarea id="bkText" placeholder="Paste a backup here, then tap Restore" style="margin-top:10px" aria-label="Backup text"></textarea></section>`;
 }
 
@@ -422,15 +455,24 @@ document.addEventListener('click',function(ev){
   if(d.ctype){cardioType=d.ctype;render();return;}
   if(d.wtype){
     const t=d.wtype==='OFF'?'NONE':d.wtype, cur=S.workouts[viewDate]||{};
-    S.workouts[viewDate]={type:t,rounds:cur.type===t?(cur.rounds||0):0};save();render();return;
+    S.workouts[viewDate]=cur.type===t?Object.assign({},cur):{type:t,rounds:0};save();render();return;
   }
   if(d.round){
     const n=+d.round, cur=S.workouts[viewDate]||{type:wType(viewDate),rounds:0};
     S.workouts[viewDate]={type:cur.type||wType(viewDate),rounds:(cur.rounds===n?n-1:n)};save();render();return;
   }
-  if(d.mob){
-    const cur=S.workouts[viewDate]||{type:'R',rounds:0};
-    S.workouts[viewDate]={type:'R',rounds:cur.rounds>=1?0:1};save();render();return;
+  if(d.part!==undefined){
+    const i=+d.part, parts=getParts(viewDate).slice(), ix=parts.indexOf(i);
+    if(ix>=0)parts.splice(ix,1);else parts.push(i);
+    S.workouts[viewDate]={type:'R',rounds:0,parts:parts};save();
+    el.setAttribute('aria-pressed',parts.indexOf(i)>=0);
+    const mc=document.getElementById('mobCount');if(mc)mc.textContent=parts.length+' of '+MOB.length+' parts done';
+    const all=document.querySelector('[data-moball]');if(all)all.textContent=parts.length>=MOB.length?'Clear all':'Mark all done';
+    return;
+  }
+  if(d.moball){
+    const full=getParts(viewDate).length>=MOB.length;
+    S.workouts[viewDate]={type:'R',rounds:0,parts:full?[]:MOB.map((m,i)=>i)};save();render();return;
   }
   if(d.stairs){ciStairs=ciStairs===+d.stairs?null:+d.stairs;document.querySelectorAll('[data-stairs]').forEach(c=>c.setAttribute('aria-pressed',+c.dataset.stairs===ciStairs));const p=document.querySelector('[data-stairs]').closest('.chips').nextElementSibling;if(p)p.textContent=ciStairs?STAIRS[ciStairs]:'Tap a number';return;}
   if(d.metric){ciMetric=d.metric;render();return;}
@@ -466,7 +508,7 @@ document.addEventListener('click',function(ev){
     case 'ciSavePrev':if(saveCheckin()){toast('Saved '+shortDate(ciDate));setDate('ci',shiftKey(ciDate,-1));}break;
     case 'setSave':{
       const g=parseInt(document.getElementById('goalIn').value,10),r=document.getElementById('remIn').value;
-      S.followPlan=document.getElementById('planOn').checked;
+      S.followPlan=document.getElementById('planOn').checked;const ps=document.getElementById('planStart').value;if(ps)S.planStart=ps;
       if(g>=5&&g<=300)S.goalMin=g;if(r)S.reminder=r;save();toast('Settings saved');render();break;}
     case 'bkCopy':{
       const txt=JSON.stringify(S);
